@@ -34,10 +34,53 @@ var COL = {
 var ACOL = {
   ID: 1, OWNER_HASH: 2, VIEWER_HASH: 3, CREATED_AT: 4,
   Q1_GOOD: 5, Q1_BAD: 6, Q2_GOOD: 7, Q2_BAD: 8, Q3: 9, Q4: 10, Q5: 11,
-  Q7: 12, Q8: 13, Q9: 14, Q9_DETAIL: 15, Q10: 16, Q11: 17, Q12: 18
+  Q7: 12, Q8: 13, Q9: 14, Q9_DETAIL: 15, Q10: 16, Q11: 17, Q12: 18,
+  // ↓ 真剣交際パートナー機能追加分（末尾に追加。既存データには影響しない）
+  SERIOUS_RELATIONSHIP_STATUS: 19, PARTNER_HASH: 20,
+  SERIOUS_RELATIONSHIP_STARTED_AT: 21, SERIOUS_RELATIONSHIP_ENDED_AT: 22
 };
 
 var DATA_START_ROW = 2; // 1行目=見出し, 2行目以降がデータ
+
+/* ------------------------------------------------------------
+   真剣交際パートナー機能連携（Partners中央API）
+   ------------------------------------------------------------ */
+var PARTNERS_ENDPOINT = 'https://script.google.com/macros/s/XXXXXXXXXXXXXXXX/exec'; // ← Partners用GASの/exec URLを設定
+var INTERNAL_SECRET    = PropertiesService.getScriptProperties().getProperty('INTERNAL_SECRET') || '';
+
+/* 指定ownerHashの現在の真剣交際ステータスをPartners APIに問い合わせる。
+   ・ active: true  → viewerHash が partnerHash と一致する場合のみ閲覧許可
+   ・ everPartnered: true（かつ active:false）→ 過去に交際していたが現在は
+     パートナー不在（交際終了後など）。本人以外は誰にも見せない。
+   ・ 両方 false → 従来通り「初回閲覧者固定」ロジックを使う
+   結果は120秒キャッシュし、Partners API不通時は「everPartnered:false」
+   として従来ロジックにフォールバックする（閲覧を過剰にブロックしないため）。 */
+function getPartnerStatus(ownerHash) {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'partner_' + ownerHash;
+  var cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
+  var result = { active: false, everPartnered: false, partnerHash: '' };
+  try {
+    var url = PARTNERS_ENDPOINT + '?action=status'
+      + '&ownerHash=' + encodeURIComponent(ownerHash)
+      + '&secret=' + encodeURIComponent(INTERNAL_SECRET);
+    var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    var body = JSON.parse(res.getContentText());
+    if (body.ok) {
+      result = {
+        active: !!body.active,
+        everPartnered: !!body.everPartnered,
+        partnerHash: body.partnerHash || ''
+      };
+    }
+  } catch (err) {
+    Logger.log('getPartnerStatus failed: ' + err);
+  }
+  cache.put(cacheKey, JSON.stringify(result), 120);
+  return result;
+}
 
 
 /* ------------------------------------------------------------
@@ -60,6 +103,9 @@ function doPost(e) {
     var body = JSON.parse(e.postData.contents);
     if (body.action === 'share') {
       return handleShare(body);
+    }
+    if (body.action === 'syncPartnerStatus') {
+      return handleSyncPartnerStatus(body);
     }
     return jsonResponse({ ok: false, reason: 'invalid_action' });
   } catch (err) {
@@ -123,7 +169,8 @@ function handleShare(body) {
       analytics.q3 || '', analytics.q4 || '', analytics.q5 || '',
       analytics.q7 || '', analytics.q8 || '',
       analytics.q9 || '', analytics.q9Detail || '',
-      analytics.q10 || '', analytics.q11 || '', analytics.q12 || ''
+      analytics.q10 || '', analytics.q11 || '', analytics.q12 || '',
+      '', '', '', '' // SERIOUS_RELATIONSHIP_STATUS / PARTNER_HASH / STARTED_AT / ENDED_AT（初期値は空）
     ]);
 
     return jsonResponse({ ok: true, id: id });
@@ -194,9 +241,14 @@ function handleView(id, viewerHash) {
 
     var now = new Date();
     var allowed = false;
+    var partnerInfo = getPartnerStatus(ownerHash);
 
     if (viewerHash === ownerHash) {
       allowed = true;
+    } else if (partnerInfo.active) {
+      allowed = (viewerHash === partnerInfo.partnerHash);
+    } else if (partnerInfo.everPartnered) {
+      allowed = false;
     } else if (!existingViewerHash) {
       allowed = true;
       sheet.getRange(rowIndex, COL.VIEWER_HASH).setValue(viewerHash);
@@ -208,7 +260,9 @@ function handleView(id, viewerHash) {
       allowed = false;
     }
 
-    if (!allowed) return jsonResponse({ ok: false, reason: 'forbidden' });
+    if (!allowed) {
+      return jsonResponse({ ok: false, reason: (partnerInfo.active || partnerInfo.everPartnered) ? 'partner_locked' : 'forbidden' });
+    }
 
     sheet.getRange(rowIndex, COL.LAST_VIEWED_AT).setValue(now);
     var viewCountCell = sheet.getRange(rowIndex, COL.VIEW_COUNT);
@@ -224,6 +278,44 @@ function updateAnalyticsViewerHash(id, viewerHash) {
   var sheet = getSpreadsheet().getSheetByName(ANALYTICS_SHEET);
   var rowIndex = findRowById(sheet, id);
   if (rowIndex) sheet.getRange(rowIndex, ACOL.VIEWER_HASH).setValue(viewerHash);
+}
+
+/* ------------------------------------------------------------
+   Partners APIからの真剣交際ステータス同期
+   ------------------------------------------------------------ */
+function handleSyncPartnerStatus(body) {
+  if (!INTERNAL_SECRET || body.secret !== INTERNAL_SECRET) {
+    return jsonResponse({ ok: false, reason: 'forbidden' });
+  }
+  var ownerHash = body.ownerHash;
+  if (!ownerHash) return jsonResponse({ ok: false, reason: 'invalid_params' });
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = getSpreadsheet().getSheetByName(ANALYTICS_SHEET);
+    var rowIndex = findAnalyticsRowByOwnerHash(sheet, ownerHash);
+    if (!rowIndex) return jsonResponse({ ok: true, skipped: true });
+
+    sheet.getRange(rowIndex, ACOL.SERIOUS_RELATIONSHIP_STATUS).setValue(body.status || '');
+    sheet.getRange(rowIndex, ACOL.PARTNER_HASH).setValue(body.partnerHash || '');
+    sheet.getRange(rowIndex, ACOL.SERIOUS_RELATIONSHIP_STARTED_AT).setValue(body.startedAt || '');
+    sheet.getRange(rowIndex, ACOL.SERIOUS_RELATIONSHIP_ENDED_AT).setValue(body.endedAt || '');
+    return jsonResponse({ ok: true });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* Analyticsシート上で ownerHash が一致する行を探す（見つからなければ null） */
+function findAnalyticsRowByOwnerHash(sheet, ownerHash) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < DATA_START_ROW) return null;
+  var values = sheet.getRange(DATA_START_ROW, 1, lastRow - DATA_START_ROW + 1, ACOL.OWNER_HASH).getValues();
+  for (var i = 0; i < values.length; i++) {
+    if (values[i][ACOL.OWNER_HASH - 1] === ownerHash) return DATA_START_ROW + i;
+  }
+  return null;
 }
 
 /* id (A列) からデータ行番号を探す。見つからなければ null */
