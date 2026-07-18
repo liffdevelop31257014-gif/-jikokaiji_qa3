@@ -31,13 +31,17 @@ var COL = {
 //   列自体が存在しないため現状は書き込んでいません（他のランキング
 //   q4は列があるため含めています。意図的な除外でなければ列を
 //   追加してください）。
+// ※ Q13（夫婦や家族のなかで守っていきたいルール、家訓）は23列目に
+//   末尾追加。スプレッドシート側の実際の列位置と一致しているか確認してください。
 var ACOL = {
   ID: 1, OWNER_HASH: 2, VIEWER_HASH: 3, CREATED_AT: 4,
   Q1_GOOD: 5, Q1_BAD: 6, Q2_GOOD: 7, Q2_BAD: 8, Q3: 9, Q4: 10, Q5: 11,
   Q7: 12, Q8: 13, Q9: 14, Q9_DETAIL: 15, Q10: 16, Q11: 17, Q12: 18,
   // ↓ 真剣交際パートナー機能追加分（末尾に追加。既存データには影響しない）
   SERIOUS_RELATIONSHIP_STATUS: 19, PARTNER_HASH: 20,
-  SERIOUS_RELATIONSHIP_STARTED_AT: 21, SERIOUS_RELATIONSHIP_ENDED_AT: 22
+  SERIOUS_RELATIONSHIP_STARTED_AT: 21, SERIOUS_RELATIONSHIP_ENDED_AT: 22,
+  // ↓ Q13（夫婦や家族のなかで守っていきたいルール、家訓）追加分（末尾に追加）
+  Q13: 23
 };
 
 var DATA_START_ROW = 2; // 1行目=見出し, 2行目以降がデータ
@@ -170,7 +174,8 @@ function handleShare(body) {
       analytics.q7 || '', analytics.q8 || '',
       analytics.q9 || '', analytics.q9Detail || '',
       analytics.q10 || '', analytics.q11 || '', analytics.q12 || '',
-      '', '', '', '' // SERIOUS_RELATIONSHIP_STATUS / PARTNER_HASH / STARTED_AT / ENDED_AT（初期値は空）
+      '', '', '', '', // SERIOUS_RELATIONSHIP_STATUS / PARTNER_HASH / STARTED_AT / ENDED_AT（初期値は空）
+      analytics.q13 || ''
     ]);
 
     return jsonResponse({ ok: true, id: id });
