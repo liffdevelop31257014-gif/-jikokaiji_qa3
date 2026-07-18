@@ -33,14 +33,16 @@ var COL = {
 //   追加してください）。
 // ※ Q13（夫婦や家族のなかで守っていきたいルール、家訓）は23列目に
 //   末尾追加。スプレッドシート側の実際の列位置と一致しているか確認してください。
+// 実際のシート列順: id, ownerHash, viewerHash, createdAt,
+// serious_relationship_status, partner_hash, serious_relationship_started_at, serious_relationship_ended_at,
+// q1good, q1bad, q2good, q2bad, q3, q4, q5, q7, q8, q9, q9Detail, q10, q11, q12, q13
 var ACOL = {
   ID: 1, OWNER_HASH: 2, VIEWER_HASH: 3, CREATED_AT: 4,
-  Q1_GOOD: 5, Q1_BAD: 6, Q2_GOOD: 7, Q2_BAD: 8, Q3: 9, Q4: 10, Q5: 11,
-  Q7: 12, Q8: 13, Q9: 14, Q9_DETAIL: 15, Q10: 16, Q11: 17, Q12: 18,
-  // ↓ 真剣交際パートナー機能追加分（末尾に追加。既存データには影響しない）
-  SERIOUS_RELATIONSHIP_STATUS: 19, PARTNER_HASH: 20,
-  SERIOUS_RELATIONSHIP_STARTED_AT: 21, SERIOUS_RELATIONSHIP_ENDED_AT: 22,
-  // ↓ Q13（夫婦や家族のなかで守っていきたいルール、家訓）追加分（末尾に追加）
+  SERIOUS_RELATIONSHIP_STATUS: 5, PARTNER_HASH: 6,
+  SERIOUS_RELATIONSHIP_STARTED_AT: 7, SERIOUS_RELATIONSHIP_ENDED_AT: 8,
+  Q1_GOOD: 9, Q1_BAD: 10, Q2_GOOD: 11, Q2_BAD: 12, Q3: 13, Q4: 14, Q5: 15,
+  Q7: 16, Q8: 17, Q9: 18, Q9_DETAIL: 19, Q10: 20, Q11: 21, Q12: 22,
+  // ↓ Q13（夫婦や家族のなかで守っていきたいルール、家訓）
   Q13: 23
 };
 
@@ -168,13 +170,13 @@ function handleShare(body) {
 
     analyticsSheet.appendRow([
       id, ownerHash, '', now,
+      '', '', '', '', // SERIOUS_RELATIONSHIP_STATUS / PARTNER_HASH / STARTED_AT / ENDED_AT（初期値は空）
       analytics.q1good || '', analytics.q1bad || '',
       analytics.q2good || '', analytics.q2bad || '',
       analytics.q3 || '', analytics.q4 || '', analytics.q5 || '',
       analytics.q7 || '', analytics.q8 || '',
       analytics.q9 || '', analytics.q9Detail || '',
       analytics.q10 || '', analytics.q11 || '', analytics.q12 || '',
-      '', '', '', '', // SERIOUS_RELATIONSHIP_STATUS / PARTNER_HASH / STARTED_AT / ENDED_AT（初期値は空）
       analytics.q13 || ''
     ]);
 
